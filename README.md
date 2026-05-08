@@ -1,8 +1,15 @@
-# Hermes SGLang Daily Digest
+# Hermes LLM Digest
 
-An automated daily digest system built on [Hermes Agent](https://github.com/NousResearch/hermes-agent) that tracks activity in the [SGLang](https://github.com/sgl-project/sglang) GitHub repository. Every morning, it collects new and closed issues, opened and merged pull requests, and related blog posts — then delivers a formatted summary straight to Telegram.
+Automated daily digests for LLM infrastructure projects — built on [Hermes Agent](https://github.com/NousResearch/hermes-agent) and the AMD LLM Gateway. Each morning, the system collects new and closed issues, opened and merged pull requests, and related blog posts from tracked repositories, then delivers a formatted summary straight to Telegram.
 
-This project was created as a practical example of setting up Hermes Agent with the AMD LLM Gateway, configuring a Telegram bot, and building a custom Hermes skill with automated cron delivery.
+Currently tracking:
+
+| Project | Repository | Skill |
+|---------|------------|-------|
+| **SGLang** | [sgl-project/sglang](https://github.com/sgl-project/sglang) | [`sglang/SKILL.md`](sglang/SKILL.md) |
+| **vLLM** | [vllm-project/vllm](https://github.com/vllm-project/vllm) | *coming soon* |
+
+Want to add another project? See [Adding a New Digest](#adding-a-new-digest) below.
 
 ---
 
@@ -13,13 +20,16 @@ This project was created as a practical example of setting up Hermes Agent with 
   - [Step 2: Configure the AMD LLM Gateway](#step-2-configure-the-amd-llm-gateway)
   - [Step 3: Set Up the Telegram Bot](#step-3-set-up-the-telegram-bot)
   - [Step 4: Start the Gateway](#step-4-start-the-gateway)
-- [SGLang Daily Digest Skill](#sglang-daily-digest-skill)
-  - [What It Does](#what-it-does)
-  - [Skill Design](#skill-design)
-  - [Installing the Skill](#installing-the-skill)
+- [Using the Skills](#using-the-skills)
+  - [Installing a Skill](#installing-a-skill)
   - [Running Manually](#running-manually)
   - [Scheduling with Cron](#scheduling-with-cron)
+- [SGLang Daily Digest](#sglang-daily-digest)
+  - [What It Tracks](#what-it-tracks)
+  - [Skill Design](#skill-design)
   - [Example Output](#example-output)
+- [Adding a New Digest](#adding-a-new-digest)
+- [Contributing](#contributing)
 
 ---
 
@@ -234,11 +244,85 @@ Your Hermes Agent is now fully operational — connected to the AMD LLM Gateway 
 
 ---
 
-## SGLang Daily Digest Skill
+## Using the Skills
 
-### What It Does
+Each tracked project has its own Hermes skill in a folder named after the project (e.g. `sglang/SKILL.md`). The skills share the same structure and usage patterns.
 
-The SGLang Daily Digest skill automatically collects and summarises the last 24 hours of activity from the [SGLang GitHub repository](https://github.com/sgl-project/sglang):
+### Installing a Skill
+
+Copy a skill into your Hermes skills directory:
+
+```bash
+# Example: install the SGLang skill
+mkdir -p ~/.hermes/skills/research/sglang-daily-digest/
+cp sglang/SKILL.md ~/.hermes/skills/research/sglang-daily-digest/SKILL.md
+```
+
+Or install directly from this repository:
+
+```bash
+hermes skills install https://raw.githubusercontent.com/ChangLiu0709/hermes-llm-digest/main/sglang/SKILL.md \
+  --name sglang-daily-digest
+```
+
+Verify it is installed:
+
+```bash
+hermes skills list | grep -i digest
+```
+
+### Running Manually
+
+In an interactive Hermes session, load a skill and ask for a digest:
+
+```
+/skill sglang-daily-digest
+What's new in SGLang today?
+```
+
+Or as a one-shot command:
+
+```bash
+hermes -s sglang-daily-digest chat -q "Generate today's SGLang daily digest"
+```
+
+### Scheduling with Cron
+
+To receive a digest automatically every morning via Telegram, set up a Hermes cron job.
+
+In an interactive Hermes session:
+
+```
+Create a cron job that runs the sglang-daily-digest skill every day at 7:30 AM UK time
+and delivers the result to my Telegram.
+```
+
+The cron job uses these settings:
+
+| Setting | Value |
+|---------|-------|
+| Schedule | `30 6 * * *` (6:30 UTC = 7:30 AM BST) |
+| Skill | `sglang-daily-digest` (or whichever project) |
+| Delivery | `telegram:<your-chat-id>` |
+| Toolsets | `terminal`, `web`, `file` |
+| Repeat | forever |
+
+Manage cron jobs with:
+
+```bash
+hermes cron list                 # view all jobs
+hermes cron run <job-id>         # trigger immediately
+hermes cron pause <job-id>       # pause
+hermes cron resume <job-id>      # resume
+```
+
+---
+
+## SGLang Daily Digest
+
+### What It Tracks
+
+The SGLang skill ([`sglang/SKILL.md`](sglang/SKILL.md)) collects the last 24 hours of activity from [sgl-project/sglang](https://github.com/sgl-project/sglang):
 
 | Category | Source | Sorting |
 |----------|--------|---------|
@@ -252,7 +336,7 @@ Each category shows the **top 10** most relevant items, prioritising the most-di
 
 ### Skill Design
 
-The skill is structured as a standard Hermes SKILL.md file (see [`sglang/SKILL.md`](sglang/SKILL.md)) with the following architecture:
+The skill is structured as a standard Hermes SKILL.md file with the following architecture:
 
 ```
 sglang/SKILL.md
@@ -280,72 +364,6 @@ sglang/SKILL.md
 5. **Blog scraping via JSON payload** — The LMSYS blog uses Next.js with client-side rendering. Instead of parsing HTML, the script extracts the embedded JSON data payload from the page source.
 
 6. **Discussion-priority sorting** — Items are sorted by comment count (most discussed first) rather than pure recency, surfacing the issues and PRs that are generating the most community engagement.
-
-### Installing the Skill
-
-Copy the skill into your Hermes skills directory:
-
-```bash
-mkdir -p ~/.hermes/skills/research/sglang-daily-digest/
-cp sglang/SKILL.md ~/.hermes/skills/research/sglang-daily-digest/SKILL.md
-```
-
-Or install directly from this repository using Hermes:
-
-```bash
-hermes skills install https://raw.githubusercontent.com/<your-username>/hermes-sglang-digest/main/sglang/SKILL.md --name sglang-daily-digest
-```
-
-Verify it is installed:
-
-```bash
-hermes skills list | grep sglang
-```
-
-### Running Manually
-
-In an interactive Hermes session, load the skill and ask for a digest:
-
-```
-/skill sglang-daily-digest
-What's new in SGLang today?
-```
-
-Or as a one-shot command:
-
-```bash
-hermes -s sglang-daily-digest chat -q "Generate today's SGLang daily digest"
-```
-
-### Scheduling with Cron
-
-To receive the digest automatically every morning via Telegram, set up a Hermes cron job.
-
-In an interactive Hermes session:
-
-```
-Create a cron job that runs the sglang-daily-digest skill every day at 7:30 AM UK time
-and delivers the result to my Telegram.
-```
-
-Or configure it programmatically. The cron job uses these settings:
-
-| Setting | Value |
-|---------|-------|
-| Schedule | `30 6 * * *` (6:30 UTC = 7:30 AM BST) |
-| Skill | `sglang-daily-digest` |
-| Delivery | `telegram:<your-chat-id>` |
-| Toolsets | `terminal`, `web`, `file` |
-| Repeat | forever |
-
-Manage the cron job with:
-
-```bash
-hermes cron list                 # view all jobs
-hermes cron run <job-id>         # trigger immediately
-hermes cron pause <job-id>       # pause
-hermes cron resume <job-id>      # resume
-```
 
 ### Example Output
 
@@ -391,6 +409,49 @@ hermes cron resume <job-id>      # resume
 
 === End of Digest ===
 ```
+
+---
+
+## Adding a New Digest
+
+To add a digest for another LLM project (e.g. vLLM, TensorRT-LLM, llama.cpp):
+
+1. **Create a folder** named after the project:
+   ```bash
+   mkdir vllm/
+   ```
+
+2. **Copy and adapt the SGLang skill** as a starting point:
+   ```bash
+   cp sglang/SKILL.md vllm/SKILL.md
+   ```
+
+3. **Modify the skill** — update the repository URL, API endpoints, skill name, blog sources, and any project-specific filtering logic.
+
+4. **Install and test** the skill locally:
+   ```bash
+   mkdir -p ~/.hermes/skills/research/vllm-daily-digest/
+   cp vllm/SKILL.md ~/.hermes/skills/research/vllm-daily-digest/SKILL.md
+   hermes -s vllm-daily-digest chat -q "Generate today's vLLM daily digest"
+   ```
+
+5. **Set up a cron job** for automated delivery (see [Scheduling with Cron](#scheduling-with-cron)).
+
+6. **Submit a PR** to add it to this repo and update the tracking table in this README.
+
+---
+
+## Contributing
+
+Contributions are welcome. To add a new project digest or improve an existing one:
+
+1. Fork this repository
+2. Create a branch (`git checkout -b add-vllm-digest`)
+3. Add or modify the skill in its project folder
+4. Update the tracking table in this README
+5. Open a pull request
+
+Please follow the existing skill structure (see [`sglang/SKILL.md`](sglang/SKILL.md) as a reference) so that all digests share a consistent format.
 
 ---
 
