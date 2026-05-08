@@ -457,4 +457,18 @@ Please follow the existing skill structure (see [`sglang/SKILL.md`](sglang/SKILL
 
 ## License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).
+
+You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of this software, subject to the condition that the copyright notice and permission notice are included in all copies or substantial portions of the Software.
+
+See the [LICENSE](LICENSE) file for the full legal text.
+
+### Third-Party Acknowledgements
+
+This project builds on and interacts with the following open-source projects and services:
+
+- [Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous Research — MIT License
+- [SGLang](https://github.com/sgl-project/sglang) by the SGLang Team — Apache License 2.0
+- [vLLM](https://github.com/vllm-project/vllm) by the vLLM Team — Apache License 2.0
+
+Data is collected via the [GitHub REST API](https://docs.github.com/en/rest) and the [LMSYS blog](https://lmsys.org/blog/), subject to their respective terms of service.
