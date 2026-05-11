@@ -7,7 +7,7 @@ Currently tracking:
 | Project | Repository | Skill |
 |---------|------------|-------|
 | **SGLang** | [sgl-project/sglang](https://github.com/sgl-project/sglang) | [`sglang/SKILL.md`](sglang/SKILL.md) |
-| **vLLM** | [vllm-project/vllm](https://github.com/vllm-project/vllm) | *coming soon* |
+| **vLLM** | [vllm-project/vllm](https://github.com/vllm-project/vllm) | [https://github.com/ChangLiu0709/hermes-llm-digest/blob/67d00b6ee485a3dd671638513885d466111ac359/vllm/vllm-daily-digest/vllm-daily-digest.md]
 
 Want to add another project? See [Adding a New Digest](#adding-a-new-digest) below.
 
