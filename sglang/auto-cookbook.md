@@ -450,6 +450,95 @@ cd /home/changliu/SGLang/cookbook/sgl-cookbook
 git branch
 ```
 
+## Mode 1: Automated InferenceX PR Scanning
+
+### Overview
+
+Instead of manually checking InferenceX PRs, use the scanner script to automatically find
+AMD-related PRs from the last 7 days that haven't been reflected in the cookbook:
+
+```bash
+python3 sglang/scripts/scan_inferencex_prs.py \
+  --days 7 --cookbook-path /path/to/sgl-cookbook
+```
+
+### What it does
+
+1. Lists all PRs in `SemiAnalysisAI/InferenceX` from the last N days
+2. Filters for AMD-related PRs (mi300x/mi325x/mi355x in title or branch)
+3. Skips infrastructure-only PRs (runner changes, reverts, monitoring)
+4. Checks which PRs modify benchmark `.sh` files (actual server commands)
+5. Cross-references each model+GPU combo against the cookbook's ConfigGenerator
+6. Reports which model+GPU combos are MISSING from the cookbook
+
+### Output
+
+```
+ACTIONABLE: 2 benchmark(s) need cookbook alignment
+
+  Model: Qwen36 | GPU: mi355x | Status: CLOSED
+  InferenceX PR: #1556 - fix: correct Qwen3.5 MI355X MTP benchmark setup
+  Benchmark: benchmarks/single_node/qwen3.5_fp4_mi355x_mtp.sh
+
+  Model: DeepSeekR1 | GPU: mi355x | Status: MERGED
+  InferenceX PR: #1521 - Add dsr1-fp8-mi355x-sglang-mtp single-node MTP recipe
+  Benchmark: benchmarks/single_node/dsr1_fp8_mi355x_mtp.sh
+```
+
+### For each actionable item
+
+1. Read the InferenceX PR diff and benchmark `.sh` script
+2. Extract the serving commands, docker image, env vars, flags
+3. Update the cookbook ConfigGenerator JS, docs .md, and YAML
+4. Create a draft PR to sgl-project/sgl-cookbook
+
+### Model name mapping
+
+The script maintains a `MODEL_NAME_MAP` dict that maps InferenceX slugs (e.g. `dsr1`,
+`qwen3.5`, `glm47flash`) to cookbook ConfigGenerator names (e.g. `DeepSeekR1`, `Qwen36`,
+`GLM47Flash`). New models appearing as "UNKNOWN" just need a mapping added to the dict.
+
+---
+
+## Critical AMD MI300X Environment Variables
+
+For MLA-based models (GLM family, DeepSeek family, MiMo) on MI300X, these are required:
+
+```bash
+-e SGLANG_ROCM_FUSED_DECODE_MLA=false   # Disable buggy fused MLA decode path
+-e SGLANG_USE_AITER=0                    # Disable aiter (crashes on MLA rope)
+-e USE_ROCM_AITER_ROPE_BACKEND=0         # Disable aiter rotary embedding
+```
+
+### FP8 Models
+
+FP8 models (e.g., MiMo-V2-Flash) need `--disable-cuda-graph` due to Triton AMD compiler
+limitations with FP8 matmul kernels (`PassManager::run failed` on `fp8_kernel.py`).
+
+### transformers Compatibility (sglang v0.5.11)
+
+The v0.5.11 ROCm image ships transformers 5.6.0. These models require 5.7+ and cannot run:
+- Mistral-Small-4-119B (Pixtral tokenizer)
+- Intern-S1-FP8 (custom tokenizer)
+- DeepSeek-V3.2 (config format)
+
+Do NOT just `pip install --upgrade transformers` — it fixes the tokenizer error but breaks
+sglang's MLA forward code. Wait for a new sglang ROCm image release.
+
+---
+
+## Completed PRs
+
+| Model | PR | Date | Notes |
+|-------|-----|------|-------|
+| Ring-2.5-1T | #212 | 2026-04 | Multi-node MI300X, single MI355X |
+| Qwen3.6 | #268 | 2026-05-11 | tp=1 all AMD GPUs |
+| GLM-5-FP8 (MI355X) | #269 | 2026-05-14 | FP8 tp=4, aligned with InferenceX #1375 |
+| GLM-4.7-Flash (MI300X) | #270 | 2026-05-14 | tp=1, env vars required for MLA |
+| MiMo-V2-Flash (MI300X) | #271 | 2026-05-14 | tp=2, --disable-cuda-graph for FP8 |
+
+---
+
 ## Notes
 
 - The MI300X server (64.139.222.223) is shared infrastructure. Check `docker ps` and GPU
