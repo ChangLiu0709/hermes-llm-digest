@@ -420,12 +420,11 @@ Note: these are NOT `-rocm` suffixed images. Naming: `lmsysorg/sglang:v{ver}-roc
 1. Pick model   → find AMD cells in {model}.jsx
 2. Extract      → reconstruct `sglang serve` command from cell env[] + flags[]
 3. Docker setup → pull latest ROCm image, launch container
-4. Verify       → start server, test output quality (not just startup), check sglang version
-5. ISL/OSL      → check LIVE cookbook page for rendered ISL/OSL values (NOT in config JSX)
-6. Sweep        → concurrency sweep: 6 data points across low-latency/balanced/high-throughput
-7. GSM8K        → accuracy eval (optional, background job, can take hours for thinking models)
-8. Record       → fill {model}-benchmarks.jsx with results + sglang_version
-9. PR           → push to fork, create PR to sgl-project/sglang, tag @zijiexia
+4. Verify       → test ALL cell variants: default, quant, size, reasoning, MTP/EAGLE, Mamba cache
+5. Sweep        → concurrency sweep: 6 data points, ISL/OSL=1000/1000, --warmup-requests 64
+6. GSM8K        → accuracy eval (optional, background job, can take hours for thinking models)
+7. Record       → fill {model}-benchmarks.jsx with results + sglang_version
+8. PR           → push to fork, create PR to sgl-project/sglang, tag @zijiexia
 ```
 
 #### Step 1: Extract AMD Cells
@@ -468,27 +467,51 @@ docker run -d --name chang_cookbook_{model} \
   sleep infinity
 ```
 
-#### Step 3: Verify Command
+#### Step 3: Verify ALL Cell Variants
 
-Before benchmarking, verify each cell's reconstructed command actually works:
+Before benchmarking, verify EVERY distinct cell variant's command works. A model
+page typically has multiple tabs/cells covering different configurations. You must
+test each one — not just the default.
+
+**Cell variants to verify (check all that exist in the model's config JSX):**
+
+1. **Default settings** — base model, default quant (usually BF16), no extras
+2. **Different quantization** — e.g., BF16 vs FP8 vs FP4 (each is a separate cell)
+3. **Different model sizes** — e.g., 4B, 9B, 27B variants within the same model family
+4. **Reasoning parser** — cells with `--reasoning-parser` flag (e.g., `--reasoning-parser qwen3`)
+5. **MTP / Speculative decoding** — cells with `--speculative-algorithm EAGLE` or
+   `--speculative-algorithm MTP` flags (separate server restart needed)
+6. **Mamba radix cache** — cells with `--enable-mamba-radix-cache` (if the model has
+   a hybrid Mamba architecture tab)
+
+**For each variant:**
 
 ```bash
-# Write server script, start, monitor, test
-docker exec -d chang_cookbook_{model} bash /workpath/server_{model}.sh
+# Write server script for this variant
+docker exec -d chang_cookbook_{model} bash /workpath/server_{variant}.sh
 # Wait for "The server is fired up and ready to roll!"
+
+# Health check
+curl -s http://localhost:{PORT}/v1/models
+
+# Quality check — verify coherent output (not garbled/empty)
 curl -s http://localhost:{PORT}/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model": "{hf_model_name}", "messages": [{"role":"user","content":"What is 2+3? Answer briefly."}], "max_tokens": 256}'
+
+# Kill server before testing next variant
+docker exec chang_cookbook_{model} pkill -f sglang || true
+sleep 5
 ```
 
 **CRITICAL**: Always test actual output quality, not just server startup — some backends
 (aiter on Qwen3.5) produce garbled output even though the server starts fine.
 
-**Verification checklist:**
-1. Server starts without errors
-2. Health check passes: `curl http://localhost:{PORT}/v1/models`
-3. Chat completion returns coherent output (not garbled/empty)
-4. If model has EAGLE speculative decoding, check logs for accept length > 1.0
+**Variant-specific checks:**
+- EAGLE/MTP: check server logs for accept length > 1.0
+- Reasoning parser: send a math question, verify `<think>...</think>` tags in output
+- FP8: watch for Triton compilation errors (may need `--disable-cuda-graph`)
+- Mamba radix cache: verify no crash on second request (cache reuse path)
 
 Get sglang version (goes in every benchmark entry):
 ```bash
@@ -496,22 +519,12 @@ docker exec chang_cookbook_{model} pip show sglang 2>/dev/null | grep Version
 # sglang.__version__ does NOT exist — always use pip show
 ```
 
-#### Step 4: Determine ISL/OSL Values
+#### Step 4: ISL/OSL Values
 
-ISL/OSL are **per-model** and NOT available in the config JSX (which uses template
-placeholders `{{ISL}}`, `{{OSL}}`, `{{DATASET}}`). You MUST determine them separately:
-
-1. **Check the live cookbook page** at `https://docs.sglang.io/cookbook/autoregressive/{Vendor}/{Model}`
-   — the engine renders actual ISL/OSL values in the benchmark command display
-2. **Check existing benchmark entries** in `{model}-benchmarks.jsx` for previously used values
-3. **Ask the user** to check the page if you can't access it
-
-Known ISL/OSL values:
-- Qwen3.5 (all sizes): ISL=1024, OSL=1024
-- DeepSeek-V4: ISL=8192, OSL=1024
-- Kimi-K2.6: ISL=1000, OSL=1000
-
-**Do NOT default to 8192/1024** — smaller models often use 1024/1024.
+Use **ISL=1000, OSL=1000** uniformly for all models. This is our standard benchmark
+workload size, applied consistently across all cookbook entries regardless of what
+the PR's config JSX template placeholders (`{{ISL}}`, `{{OSL}}`) render to on the
+live page.
 
 #### Step 5: Benchmark — Concurrency Sweep + GSM8K Accuracy
 
@@ -528,8 +541,8 @@ Run the concurrency sweep first (faster, ~30 min total) then GSM8K (can take hou
 | balanced        | 64, 256     | 512, 1024   |
 | high-throughput | 1024, 4096  | 2048, 4096  |
 
-Standard workload: `--dataset-name random --random-input-len <ISL> --random-output-len <OSL>`
-ISL/OSL determined in Step 4 above. Add `--warmup-requests 64` for stable results.
+Standard workload: `--dataset-name random --random-input-len 1000 --random-output-len 1000`
+Add `--warmup-requests 64` for stable results.
 
 Note: `numPromptsByConc` varies per model config JSX. The PR's config may use a
 simpler sweep (e.g. `{1:10, 100:1000}`) — we use our richer table for more
@@ -589,9 +602,9 @@ sgl-eval does NOT support resume — must always re-run from scratch.
   match: { hw: "mi300x", variant: "flash", quant: "fp8", strategy: "low-latency", nodes: "single" },
   sglang_version: "0.5.13.post1",  // MANDATORY
   speed: [
-    { workload: { dataset: "random", isl: 8192, osl: 1024, max_concurrency: 1 },
+    { workload: { dataset: "random", isl: 1000, osl: 1000, max_concurrency: 1 },
       ttft_ms: 87, tpot_ms: 3.68, tokens_per_sec_per_gpu: 65 },
-    { workload: { dataset: "random", isl: 8192, osl: 1024, max_concurrency: 16 },
+    { workload: { dataset: "random", isl: 1000, osl: 1000, max_concurrency: 16 },
       ttft_ms: 290, tpot_ms: 6.21, tokens_per_sec_per_gpu: 489 },
   ],
   accuracy: { gsm8k_pct: 97.5 },
@@ -639,7 +652,7 @@ gh pr create --repo sgl-project/sglang --base main --head ChangLiu0709:benchmark
 - SGLang patches go to sgl-project/sglang separately, not in cookbook PRs
 - Some ConfigGenerators use a base component pattern (import from `../../base/ConfigGenerator`), others are self-contained — read the existing file before modifying
 - **Benchmark data precision**: Round ttft_ms and tpot_ms to integers or 2 decimal places; tokens_per_sec_per_gpu should be integer; use MEAN values from bench_serving, not P50/P99
-- **ISL/OSL are template vars**: The config JSX uses `{{ISL}}`, `{{OSL}}`, and `{{DATASET}}` placeholders — actual values are rendered by the page engine and NOT present in the config file. The `numPromptsByConc` in the config is also different from our sweep table. Always check the LIVE cookbook page or ask the user for the rendered values. Do NOT assume 8192/1024 as default — it varies per model (e.g., Qwen3.5 uses 1024/1024, DeepSeek-V4 uses 8192/1024).
+- **ISL/OSL are uniform 1000/1000**: We use ISL=1000, OSL=1000 for all models consistently. The config JSX uses `{{ISL}}`, `{{OSL}}`, and `{{DATASET}}` template placeholders that the page engine renders — these may show different values on the live page, but our benchmarks always use 1000/1000. The `numPromptsByConc` in the PR config is also typically simpler than our 6-point sweep table.
 - **Docker image versioning**: Use the LATEST image from Docker Hub, not the one hardcoded in config; update `dockerImages` in config if using a newer tag
 
 ## Pitfalls Discovered in Practice (v1.1)
